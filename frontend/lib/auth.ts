@@ -1,47 +1,63 @@
-import NextAuth from "next-auth"
-import { PrismaAdapter } from "@auth/prisma-adapter"
-import { prisma } from "@/lib/prisma"
+import NextAuth, { CredentialsSignin } from "next-auth"
 import Credentials from "next-auth/providers/credentials"
-import bcrypt from "bcryptjs"
+
+class UnverifiedEmailError extends CredentialsSignin {
+  code = "unverified_email"
+}
+
+class InvalidCredentialsError extends CredentialsSignin {
+  code = "invalid_credentials"
+}
 
 export const { handlers, auth, signIn, signOut } = NextAuth({
-  adapter: PrismaAdapter(prisma),
   session: { strategy: "jwt" },
   pages: {
     signIn: "/login",
   },
+  logger: {
+    error() {
+      // Quiet down NextAuth credential errors to keep terminal clean!
+    },
+  },
   providers: [
     Credentials({
+      name: "Auth0 Direct",
       credentials: {
-        identifier: { label: "Identifier", type: "text" },
+        identifier: { label: "Email", type: "text" },
         password: { label: "Password", type: "password" },
       },
       async authorize(credentials) {
         if (!credentials?.identifier || !credentials?.password) return null
 
-        const user = await prisma.user.findFirst({
-          where: {
-            OR: [
-              { email: credentials.identifier as string },
-              { username: credentials.identifier as string }
-            ]
-          },
-        })
+        try {
+          // Delegate authentication completely to our Kotlin backend
+          const response = await fetch(`http://localhost:8080/api/public/auth/login`, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              email: credentials.identifier,
+              password: credentials.password,
+            }),
+          })
 
-        if (!user || !user.password) return null
+          if (!response.ok) {
+            const errorData = await response.json()
+            if (errorData.message?.includes("xác thực") || errorData.message?.includes("verified")) {
+              throw new UnverifiedEmailError()
+            }
+            throw new InvalidCredentialsError()
+          }
 
-        const isPasswordValid = await bcrypt.compare(
-          credentials.password as string,
-          user.password
-        )
-
-        if (!isPasswordValid) return null
-
-        return {
-          id: user.id,
-          name: user.name,
-          email: user.email,
-          role: user.role,
+          const user = await response.json()
+          return {
+            id: user.id,
+            name: user.name,
+            email: user.email,
+            role: user.role,
+            accessToken: user.accessToken,
+          }
+        } catch (error) {
+          throw error
         }
       },
     }),
@@ -54,15 +70,15 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
       if (token.role && session.user) {
         session.user.role = token.role as string
       }
+      if (token.accessToken) {
+        session.accessToken = token.accessToken as string
+      }
       return session
     },
-    async jwt({ token }) {
-      if (!token.sub) return token
-      const user = await prisma.user.findUnique({
-        where: { id: token.sub },
-      })
+    async jwt({ token, user }) {
       if (user) {
-        token.role = user.role
+        token.accessToken = (user as any).accessToken
+        token.role = (user as any).role
       }
       return token
     },
