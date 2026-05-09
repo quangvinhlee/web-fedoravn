@@ -9,6 +9,10 @@ class InvalidCredentialsError extends CredentialsSignin {
   code = "invalid_credentials"
 }
 
+class TooManyRequestsError extends CredentialsSignin {
+  code = "too_many_requests"
+}
+
 export const { handlers, auth, signIn, signOut } = NextAuth({
   session: { strategy: "jwt" },
   pages: {
@@ -42,6 +46,9 @@ export const { handlers, auth, signIn, signOut } = NextAuth({
 
           if (!response.ok) {
             const errorData = await response.json()
+            if (response.status === 429 || errorData.error === "Too Many Requests" || errorData.message?.includes("vượt quá")) {
+              throw new TooManyRequestsError()
+            }
             if (errorData.message?.includes("xác thực") || errorData.message?.includes("verified")) {
               throw new UnverifiedEmailError()
             }

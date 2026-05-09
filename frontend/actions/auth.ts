@@ -20,6 +20,14 @@ export async function login(formData: FormData) {
   } catch (error: any) {
     const errStr = String(error)
     if (
+      errStr.includes("too_many_requests") || 
+      error?.code === "too_many_requests" || 
+      error?.message?.includes("too_many_requests") ||
+      error?.type === "too_many_requests"
+    ) {
+      return { error: "too_many_requests" }
+    }
+    if (
       errStr.includes("unverified") || 
       error?.code === "unverified_email" || 
       error?.message?.includes("unverified") ||

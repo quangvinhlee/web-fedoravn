@@ -32,6 +32,9 @@ export function LoginForm() {
         if (res.error === "unverified_email") {
           setError("Tài khoản chưa được xác thực. Vui lòng kiểm tra hộp thư email của bạn để xác thực tài khoản trước khi đăng nhập.")
           setShowResend(true)
+        } else if (res.error === "too_many_requests") {
+          setError("Bạn đã đăng nhập sai quá nhiều lần. Vui lòng thử lại sau vài phút.")
+          setShowResend(false)
         } else {
           setError("Tên đăng nhập, email hoặc mật khẩu không đúng.")
           setShowResend(false)
